@@ -30,7 +30,11 @@ public class AuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         // Skip auth for actuator endpoints
-        if (request.getRequestURI().startsWith("/actuator")) {
+        String path = request.getRequestURI();
+        if (path.startsWith("/actuator") ||
+                path.startsWith("/swagger-ui") ||
+                path.startsWith("/v3/api-docs") ||
+                path.startsWith("/swagger-resources")) {
             filterChain.doFilter(request, response);
             return;
         }
