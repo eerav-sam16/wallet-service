@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8080",
+      "url": "https://wallet-service-production-e961.up.railway.app",
       "description": "Local"
     },
     {
