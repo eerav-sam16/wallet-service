@@ -29,9 +29,11 @@ public class AuthFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        // Skip auth for actuator endpoints
         String path = request.getRequestURI();
-        if (path.startsWith("/actuator") ||
+
+        // Skip auth for these paths
+        if (path.equals("/") ||
+                path.startsWith("/actuator") ||
                 path.startsWith("/swagger-ui") ||
                 path.startsWith("/v3/api-docs") ||
                 path.startsWith("/swagger-resources")) {
@@ -42,7 +44,7 @@ public class AuthFilter extends OncePerRequestFilter {
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            log.warn("event=auth_failed reason=missing_header path={}", request.getRequestURI());
+            log.warn("event=auth_failed reason=missing_header path={}", path);
             sendUnauthorized(response, "Missing or invalid Authorization header");
             return;
         }
@@ -51,7 +53,7 @@ public class AuthFilter extends OncePerRequestFilter {
         boolean valid = userRepository.findByBearerToken(token).isPresent();
 
         if (!valid) {
-            log.warn("event=auth_failed reason=invalid_token path={}", request.getRequestURI());
+            log.warn("event=auth_failed reason=invalid_token path={}", path);
             sendUnauthorized(response, "Invalid bearer token");
             return;
         }
