@@ -1,0 +1,576 @@
+{
+  "info": {
+    "name": "Wallet Service — Paytm R2",
+    "description": "Complete API collection for Wallet & P2P Transfer Service.\n\nTest Tokens:\n- user-001 → token-user-001\n- user-002 → token-user-002\n- user-003 → token-user-003\n\nSteps:\n1. Run 'Create Wallet' for user-001 and user-002\n2. Copy wallet IDs into collection variables\n3. Fund wallets via DB\n4. Run transfer tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "token_user_001",
+      "value": "token-user-001",
+      "type": "string"
+    },
+    {
+      "key": "token_user_002",
+      "value": "token-user-002",
+      "type": "string"
+    },
+    {
+      "key": "token_user_003",
+      "value": "token-user-003",
+      "type": "string"
+    },
+    {
+      "key": "wallet_id_a",
+      "value": "PASTE_WALLET_A_UUID_HERE",
+      "type": "string"
+    },
+    {
+      "key": "wallet_id_b",
+      "value": "PASTE_WALLET_B_UUID_HERE",
+      "type": "string"
+    },
+    {
+      "key": "transfer_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Metrics",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/actuator/health",
+              "host": ["{{base_url}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Check if app is running. No auth required."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is UP', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('UP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/actuator/prometheus",
+              "host": ["{{base_url}}"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "View all metrics including domain counters:\n- transfers_created_total\n- transfers_declined_insufficient_funds_total\n- transfers_idempotent_replays_total"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallets",
+      "item": [
+        {
+          "name": "Create Wallet — User 001",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["wallets"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"user-001\"\n}"
+            },
+            "description": "Get or create wallet for user-001. Race-free — concurrent requests create exactly ONE wallet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Has walletId', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.walletId).to.be.a('string');",
+                  "    pm.collectionVariables.set('wallet_id_a', json.walletId);",
+                  "    console.log('Wallet A ID saved:', json.walletId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Wallet — User 002",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_002}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["wallets"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"user-002\"\n}"
+            },
+            "description": "Get or create wallet for user-002."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Has walletId', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.walletId).to.be.a('string');",
+                  "    pm.collectionVariables.set('wallet_id_b', json.walletId);",
+                  "    console.log('Wallet B ID saved:', json.walletId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Wallet — User 003",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_003}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["wallets"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"user-003\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Wallet Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets/{{wallet_id_a}}",
+              "host": ["{{base_url}}"],
+              "path": ["wallets", "{{wallet_id_a}}"]
+            },
+            "description": "Get current balance of Wallet A. Balance is always in paise (integer)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Balance is integer paise', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.balancePaise).to.be.a('number');",
+                  "    pm.expect(json.balancePaise % 1).to.eql(0);",
+                  "    console.log('Balance:', json.balancePaise, 'paise = ₹' + json.balancePaise/100);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Wallet — Not Found",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets/00000000-0000-0000-0000-000000000000",
+              "host": ["{{base_url}}"],
+              "path": ["wallets", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Should return 404"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Transfers",
+      "item": [
+        {
+          "name": "Transfer — Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transfers",
+              "host": ["{{base_url}}"],
+              "path": ["transfers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{wallet_id_a}}\",\n  \"to\": \"{{wallet_id_b}}\",\n  \"amountPaise\": 5000,\n  \"idempotencyKey\": \"transfer-test-001\"\n}"
+            },
+            "description": "Transfer 5000 paise (₹50) from Wallet A to Wallet B.\n\nMake sure wallets are funded first:\ndocker exec -it wallet-postgres psql -U wallet_user -d walletdb -c \"UPDATE wallets SET balance_paise = 1000000 WHERE user_id IN ('user-001','user-002','user-003');\""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response is 201', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Status is COMPLETED', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('COMPLETED');",
+                  "    pm.collectionVariables.set('transfer_id', json.transferId);",
+                  "    console.log('Transfer ID saved:', json.transferId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transfer — Idempotent Replay (same key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transfers",
+              "host": ["{{base_url}}"],
+              "path": ["transfers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{wallet_id_a}}\",\n  \"to\": \"{{wallet_id_b}}\",\n  \"amountPaise\": 5000,\n  \"idempotencyKey\": \"transfer-test-001\"\n}"
+            },
+            "description": "Send EXACT same request again. Money should NOT be debited twice. Returns original result."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response is 200 (replay)', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Same transfer ID returned', function() {",
+                  "    var json = pm.response.json();",
+                  "    var savedId = pm.collectionVariables.get('transfer_id');",
+                  "    pm.expect(json.transferId).to.eql(savedId);",
+                  "    console.log('Idempotent replay confirmed — same transfer ID:', json.transferId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transfer — 409 Conflict (same key, different body)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transfers",
+              "host": ["{{base_url}}"],
+              "path": ["transfers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{wallet_id_a}}\",\n  \"to\": \"{{wallet_id_b}}\",\n  \"amountPaise\": 9999,\n  \"idempotencyKey\": \"transfer-test-001\"\n}"
+            },
+            "description": "Same idempotency key but DIFFERENT amount (9999 vs 5000). Should return 409 Conflict."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 409 Conflict', function() {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transfer — 422 Insufficient Funds",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transfers",
+              "host": ["{{base_url}}"],
+              "path": ["transfers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{wallet_id_a}}\",\n  \"to\": \"{{wallet_id_b}}\",\n  \"amountPaise\": 999999999,\n  \"idempotencyKey\": \"transfer-overdraft-001\"\n}"
+            },
+            "description": "Try to transfer more than available balance. Should return 422 Declined."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 422 Declined', function() {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "pm.test('Reason is insufficient funds', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.message).to.include('Insufficient funds');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Transfer Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transfers/{{transfer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["transfers", "{{transfer_id}}"]
+            },
+            "description": "Get status of the transfer created above."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Response is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Status is COMPLETED', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('COMPLETED');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth Tests",
+      "item": [
+        {
+          "name": "No Token — 401",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/wallets/{{wallet_id_a}}",
+              "host": ["{{base_url}}"],
+              "path": ["wallets", "{{wallet_id_a}}"]
+            },
+            "description": "No Authorization header — should return 401"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 401', function() {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong Token — 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer wrong-invalid-token"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets/{{wallet_id_a}}",
+              "host": ["{{base_url}}"],
+              "path": ["wallets", "{{wallet_id_a}}"]
+            },
+            "description": "Invalid bearer token — should return 401"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 401', function() {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing Body — 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_user_001}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["wallets"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "Missing required userId field — should return 400"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 400', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

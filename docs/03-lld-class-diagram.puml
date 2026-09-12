@@ -1,0 +1,174 @@
+@startuml
+title LLD Class Diagram — Wallet Service (Spring Boot)
+
+skinparam roundcorner 10
+skinparam classBackgroundColor #f0f4ff
+skinparam classBorderColor #333
+skinparam classArrowColor #555
+skinparam noteBackgroundColor #fffde7
+skinparam noteBorderColor #aaa
+
+package "controller" {
+    class WalletController {
+        - walletService : WalletService
+        --
+        + createOrGetWallet(request: WalletRequest) : ResponseEntity
+        + getWallet(id: UUID) : ResponseEntity
+    }
+
+    class TransferController {
+        - transferService : TransferService
+        --
+        + createTransfer(request: TransferRequest) : ResponseEntity
+        + getTransfer(id: UUID) : ResponseEntity
+    }
+}
+
+package "service" {
+    class WalletService {
+        - walletRepository : WalletRepository
+        --
+        + <<@Transactional>> getOrCreateWallet(userId: String) : WalletResponse
+        + <<@Transactional(readOnly)>> getWallet(id: UUID) : WalletResponse
+    }
+
+    class TransferService {
+        - transferRepository : TransferRepository
+        - walletRepository : WalletRepository
+        - meterRegistry : MeterRegistry
+        --
+        + <<@Transactional>> transfer(request: TransferRequest) : TransferResponse
+        + <<@Transactional(readOnly)>> getTransfer(id: UUID) : TransferResponse
+        - buildHash(request: TransferRequest) : String
+        - toResponse(transfer: Transfer) : TransferResponse
+    }
+
+    note right of TransferService
+        transfer() flow:
+        1. Check idempotency_key
+           same hash → 200 replay
+           diff hash → 409 conflict
+           new key   → proceed
+        2. Validate wallets exist
+        3. INSERT transfer (PENDING)
+        4. UPDATE balance WHERE >= amount
+           0 rows → DECLINED, 422
+           1 row  → credit to_wallet
+        5. UPDATE transfer COMPLETED
+        6. COMMIT
+    end note
+}
+
+package "repository" {
+    interface WalletRepository {
+        + findByUserId(userId: String) : Optional<Wallet>
+        + upsertWallet(userId: String) : void
+        + debit(walletId: UUID, amount: long) : int
+        + credit(walletId: UUID, amount: long) : void
+    }
+
+    interface TransferRepository {
+        + findByIdempotencyKey(key: String) : Optional<Transfer>
+        + findById(id: UUID) : Optional<Transfer>
+    }
+
+    interface UserRepository {
+        + findByBearerToken(token: String) : Optional<User>
+    }
+}
+
+package "model" {
+    class Wallet {
+        - id : UUID
+        - userId : String
+        - balancePaise : Long
+        - createdAt : OffsetDateTime
+        - updatedAt : OffsetDateTime
+    }
+
+    class Transfer {
+        - id : UUID
+        - idempotencyKey : String
+        - fromWalletId : UUID
+        - toWalletId : UUID
+        - amountPaise : Long
+        - status : TransferStatus
+        - requestHash : String
+        - createdAt : OffsetDateTime
+    }
+
+    class User {
+        - id : String
+        - bearerToken : String
+        - createdAt : OffsetDateTime
+    }
+
+    enum TransferStatus {
+        PENDING
+        COMPLETED
+        DECLINED
+    }
+}
+
+package "dto" {
+    class WalletRequest {
+        + userId : String
+    }
+    class WalletResponse {
+        + walletId : UUID
+        + userId : String
+        + balancePaise : Long
+    }
+    class TransferRequest {
+        + from : UUID
+        + to : UUID
+        + amountPaise : Long
+        + idempotencyKey : String
+    }
+    class TransferResponse {
+        + transferId : UUID
+        + from : UUID
+        + to : UUID
+        + amountPaise : Long
+        + status : TransferStatus
+    }
+}
+
+package "filter" {
+    class AuthFilter {
+        - userRepository : UserRepository
+        --
+        + doFilterInternal() : void
+    }
+    class CorrelationIdFilter {
+        --
+        + doFilterInternal() : void
+    }
+    note right of CorrelationIdFilter
+        Generates UUID per request
+        Puts in MDC → every log
+        line carries correlation_id
+    end note
+}
+
+package "exception" {
+    class GlobalExceptionHandler {
+        + handleWalletNotFound() : 404
+        + handleInsufficientFunds() : 422
+        + handleIdempotencyConflict() : 409
+        + handleValidation() : 400
+        + handleGeneric() : 500
+    }
+}
+
+WalletController --> WalletService
+TransferController --> TransferService
+WalletService --> WalletRepository
+TransferService --> TransferRepository
+TransferService --> WalletRepository
+WalletRepository --> Wallet
+TransferRepository --> Transfer
+UserRepository --> User
+Transfer --> TransferStatus
+
+@enduml

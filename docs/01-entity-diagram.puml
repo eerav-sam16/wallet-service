@@ -1,0 +1,59 @@
+@startuml
+title Entity Diagram — Wallet Service
+
+skinparam roundcorner 10
+skinparam classBackgroundColor #f0f4ff
+skinparam classBorderColor #333
+skinparam classArrowColor #555
+skinparam noteBackgroundColor #fffde7
+skinparam noteBorderColor #aaa
+
+entity "users" as U {
+  * id : VARCHAR <<PK>>
+  --
+  * bearer_token : VARCHAR <<UNIQUE>>
+  * created_at : TIMESTAMP
+}
+
+entity "wallets" as W {
+  * id : UUID <<PK>>
+  --
+  * user_id : VARCHAR <<UNIQUE>>
+  * balance_paise : BIGINT
+  * created_at : TIMESTAMP
+  * updated_at : TIMESTAMP
+}
+
+entity "transfers" as T {
+  * id : UUID <<PK>>
+  --
+  * idempotency_key : VARCHAR <<UNIQUE>>
+  * from_wallet_id : UUID <<FK>>
+  * to_wallet_id : UUID <<FK>>
+  * amount_paise : BIGINT
+  * status : VARCHAR
+  * request_hash : VARCHAR
+  * created_at : TIMESTAMP
+}
+
+U ||--o{ W : "has one"
+W ||--o{ T : "sends (from)"
+W ||--o{ T : "receives (to)"
+
+note right of W
+  UNIQUE on user_id:
+  Race-free get-or-create (Gate 1)
+  balance_paise: BIGINT only
+  Never Float, Never Decimal
+  CHECK balance_paise >= 0
+end note
+
+note right of T
+  UNIQUE on idempotency_key:
+  Exactly-once transfer (Gate 2)
+  request_hash = MD5(from+to+amount)
+  Used for 409 conflict detection
+  status: PENDING / COMPLETED / DECLINED
+end note
+
+@enduml

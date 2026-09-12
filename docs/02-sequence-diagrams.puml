@@ -1,0 +1,112 @@
+@startuml
+title Wallet Service — All Sequence Diagrams
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam sequenceParticipantBackgroundColor #f0f4ff
+skinparam sequenceParticipantBorderColor #333
+skinparam noteBackgroundColor #fffde7
+skinparam noteBorderColor #aaa
+
+actor Client
+participant "Controller" as C
+participant "AuthFilter" as AF
+participant "Service" as S
+database "PostgreSQL" as DB
+
+' ─────────────────────────────────────────
+' 1. POST /wallets
+' ─────────────────────────────────────────
+== 1. POST /wallets (Get or Create) ==
+
+Client -> C : POST /wallets\n{user_id}\nBearer <token>
+C -> AF : validate token
+AF --> C : ok / 401
+
+C -> S : getOrCreateWallet(user_id)
+S -> DB : INSERT INTO wallets (id, user_id, balance_paise)\n VALUES (uuid, :user_id, 0)\n ON CONFLICT (user_id) DO NOTHING
+note over DB : UNIQUE on user_id\nguarantees 1 wallet\neven under 50 concurrent requests
+S -> DB : SELECT * FROM wallets WHERE user_id = :user_id
+DB --> S : wallet row
+S --> C : wallet
+C --> Client : 200 OK\n{wallet_id, balance_paise: 0}
+
+' ─────────────────────────────────────────
+' 2. GET /wallets/{id}
+' ─────────────────────────────────────────
+== 2. GET /wallets/{id} ==
+
+Client -> C : GET /wallets/{id}\nBearer <token>
+C -> AF : validate token
+AF --> C : ok / 401
+C -> S : getWallet(id)
+S -> DB : SELECT * FROM wallets WHERE id = :id
+DB --> S : wallet row / null
+alt wallet found
+    S --> C : wallet
+    C --> Client : 200 OK\n{wallet_id, balance_paise}
+else not found
+    C --> Client : 404 Not Found
+end
+
+' ─────────────────────────────────────────
+' 3. POST /transfers
+' ─────────────────────────────────────────
+== 3. POST /transfers ==
+
+Client -> C : POST /transfers\n{from, to, amount_paise, idempotency_key}\nBearer <token>
+C -> AF : validate token
+AF --> C : ok / 401
+C -> S : transfer(request)
+
+S -> DB : SELECT * FROM transfers\nWHERE idempotency_key = :key
+
+alt Same key + Same body (idempotent replay)
+    DB --> S : existing transfer (hash match)
+    S --> C : 200 OK (original result)
+    C --> Client : 200 OK\n{transfer_id, status}
+
+else Same key + Different body (conflict)
+    DB --> S : existing transfer (hash mismatch)
+    S --> C : 409 Conflict
+    C --> Client : 409 Conflict
+
+else New key — proceed
+    DB --> S : null
+    S -> DB : BEGIN TRANSACTION
+    S -> DB : INSERT INTO transfers\n(id, idempotency_key, from, to, amount, status=PENDING, hash)
+    S -> DB : UPDATE wallets\nSET balance_paise = balance_paise - :amount\nWHERE id = :from_id\nAND balance_paise >= :amount
+
+    alt rows affected = 0 (insufficient funds)
+        S -> DB : UPDATE transfers SET status = DECLINED
+        S -> DB : COMMIT
+        S --> C : 422 Declined
+        C --> Client : 422\n{reason: insufficient_funds}
+
+    else rows affected = 1 (debit ok)
+        S -> DB : UPDATE wallets\nSET balance_paise = balance_paise + :amount\nWHERE id = :to_id
+        S -> DB : UPDATE transfers SET status = COMPLETED
+        S -> DB : COMMIT
+        S --> C : 201 Created
+        C --> Client : 201 Created\n{transfer_id, status: COMPLETED}
+    end
+end
+
+' ─────────────────────────────────────────
+' 4. GET /transfers/{id}
+' ─────────────────────────────────────────
+== 4. GET /transfers/{id} ==
+
+Client -> C : GET /transfers/{id}\nBearer <token>
+C -> AF : validate token
+AF --> C : ok / 401
+C -> S : getTransfer(id)
+S -> DB : SELECT * FROM transfers WHERE id = :id
+DB --> S : transfer row / null
+alt found
+    C --> Client : 200 OK\n{transfer_id, status, amount_paise}
+else not found
+    C --> Client : 404 Not Found
+end
+
+@enduml

@@ -1,0 +1,406 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Wallet Service API",
+    "description": "Paytm R2 Assignment — Wallet & P2P Transfer Service. Correct under concurrency.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local"
+    },
+    {
+      "url": "https://your-app.up.railway.app",
+      "description": "Production (Railway)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Use one of the seeded tokens: token-user-001, token-user-002, token-user-003"
+      }
+    },
+    "schemas": {
+      "WalletRequest": {
+        "type": "object",
+        "required": ["userId"],
+        "properties": {
+          "userId": {
+            "type": "string",
+            "example": "user-001",
+            "description": "Unique user identifier"
+          }
+        }
+      },
+      "WalletResponse": {
+        "type": "object",
+        "properties": {
+          "walletId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "userId": {
+            "type": "string",
+            "example": "user-001"
+          },
+          "balancePaise": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1000000,
+            "description": "Balance in paise (integer only, never float). 1000000 paise = ₹10,000"
+          }
+        }
+      },
+      "TransferRequest": {
+        "type": "object",
+        "required": ["from", "to", "amountPaise", "idempotencyKey"],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "uuid",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "description": "Source wallet ID"
+          },
+          "to": {
+            "type": "string",
+            "format": "uuid",
+            "example": "660e8400-e29b-41d4-a716-446655440001",
+            "description": "Destination wallet ID"
+          },
+          "amountPaise": {
+            "type": "integer",
+            "format": "int64",
+            "example": 5000,
+            "description": "Amount in paise (integer only). 5000 paise = ₹50"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "example": "unique-transfer-key-001",
+            "description": "Client-supplied unique key. Same key = same result (exactly-once guarantee)"
+          }
+        }
+      },
+      "TransferResponse": {
+        "type": "object",
+        "properties": {
+          "transferId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "770e8400-e29b-41d4-a716-446655440002"
+          },
+          "from": {
+            "type": "string",
+            "format": "uuid",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "to": {
+            "type": "string",
+            "format": "uuid",
+            "example": "660e8400-e29b-41d4-a716-446655440001"
+          },
+          "amountPaise": {
+            "type": "integer",
+            "format": "int64",
+            "example": 5000
+          },
+          "status": {
+            "type": "string",
+            "enum": ["PENDING", "COMPLETED", "DECLINED"],
+            "example": "COMPLETED"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "example": 422
+          },
+          "error": {
+            "type": "string",
+            "example": "Unprocessable Entity"
+          },
+          "message": {
+            "type": "string",
+            "example": "Insufficient funds in wallet"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/wallets": {
+      "post": {
+        "tags": ["Wallets"],
+        "summary": "Get or Create Wallet",
+        "description": "Creates a wallet for the user if one doesn't exist. If a wallet already exists for the user, returns the existing one. Race-free — 50 concurrent requests for the same user will create exactly ONE wallet (enforced by UNIQUE constraint + ON CONFLICT DO NOTHING).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wallet created or returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletResponse"
+                },
+                "example": {
+                  "walletId": "550e8400-e29b-41d4-a716-446655440000",
+                  "userId": "user-001",
+                  "balancePaise": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing or invalid fields",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/wallets/{id}": {
+      "get": {
+        "tags": ["Wallets"],
+        "summary": "Get Wallet Balance",
+        "description": "Returns the current balance of a wallet in paise.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletResponse"
+                },
+                "example": {
+                  "walletId": "550e8400-e29b-41d4-a716-446655440000",
+                  "userId": "user-001",
+                  "balancePaise": 995000
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Wallet not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers": {
+      "post": {
+        "tags": ["Transfers"],
+        "summary": "Create Transfer",
+        "description": "Moves money from one wallet to another atomically. Enforces:\n- **Conservation**: total balance unchanged\n- **No overdraft**: source wallet cannot go negative\n- **Exactly-once**: same idempotency_key = same result, never double debit\n\nSame key + different body = 409 Conflict.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Transfer completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferResponse"
+                },
+                "example": {
+                  "transferId": "770e8400-e29b-41d4-a716-446655440002",
+                  "from": "550e8400-e29b-41d4-a716-446655440000",
+                  "to": "660e8400-e29b-41d4-a716-446655440001",
+                  "amountPaise": 5000,
+                  "status": "COMPLETED"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Idempotent replay — same key sent again, original result returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TransferResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing or invalid fields"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict — same idempotency key reused with different body",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "status": 409,
+                  "error": "Conflict",
+                  "message": "Idempotency key reused with different body: unique-transfer-key-001"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Declined — insufficient funds",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "status": 422,
+                  "error": "Unprocessable Entity",
+                  "message": "Insufficient funds in wallet: 550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers/{id}": {
+      "get": {
+        "tags": ["Transfers"],
+        "summary": "Get Transfer Status",
+        "description": "Returns the status and details of a transfer.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "770e8400-e29b-41d4-a716-446655440002"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TransferResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Transfer not found"
+          }
+        }
+      }
+    },
+    "/actuator/health": {
+      "get": {
+        "tags": ["Observability"],
+        "summary": "Health Check",
+        "description": "Returns app health status. No auth required.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "App is healthy",
+            "content": {
+              "application/json": {
+                "example": {
+                  "status": "UP",
+                  "components": {
+                    "db": { "status": "UP" },
+                    "diskSpace": { "status": "UP" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/actuator/prometheus": {
+      "get": {
+        "tags": ["Observability"],
+        "summary": "Prometheus Metrics",
+        "description": "Returns metrics in Prometheus format. Includes domain counters: transfers.created, transfers.declined.insufficient_funds, transfers.idempotent.replays. No auth required.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Metrics in Prometheus text format"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Wallets",
+      "description": "Wallet management — get or create, check balance"
+    },
+    {
+      "name": "Transfers",
+      "description": "P2P transfers — move money between wallets"
+    },
+    {
+      "name": "Observability",
+      "description": "Health checks and metrics"
+    }
+  ]
+}
