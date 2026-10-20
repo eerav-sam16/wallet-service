@@ -1,4 +1,4 @@
-# Wallet Service — Paytm R2 Assignment
+# Wallet Service
 
 A wallet service with peer-to-peer transfers. Correct under concurrency.
 
